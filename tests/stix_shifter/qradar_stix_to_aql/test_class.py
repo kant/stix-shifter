@@ -8,7 +8,7 @@ import copy
 options_file = open('tests/stix_shifter/qradar_stix_to_aql/options.json').read()
 OPTIONS = json.loads(options_file)
 
-selections = "SELECT {}".format(", ".join(OPTIONS['select_fields']))
+selections = "SELECT {}".format(", ".join(OPTIONS["options"]['select_fields']))
 from_statement = " FROM events "
 
 protocols = {
@@ -36,9 +36,9 @@ shifter = stix_shifter.StixShifter()
 
 
 class TestStixToAql(unittest.TestCase, object):
-    def test_ipv4_query(self):
+    def test_ipv4_query_with_default_mapping_and_select(self):
         stix_pattern = "[ipv4-addr:value = '192.168.122.83' or ipv4-addr:value = '192.168.122.84']"
-        query = shifter.translate('qradar', 'query', '{}', stix_pattern, OPTIONS)
+        query = shifter.translate('qradar', 'query', '{}', stix_pattern)
         where_statement = "WHERE (sourceip = '192.168.122.84' OR destinationip = '192.168.122.84' OR identityip = '192.168.122.84') OR (sourceip = '192.168.122.83' OR destinationip = '192.168.122.83' OR identityip = '192.168.122.83') {} {}".format(default_limit, default_time)
         parsed_stix = [{'attribute': 'ipv4-addr:value', 'comparison_operator': '=', 'value': '192.168.122.84'}, {'attribute': 'ipv4-addr:value', 'comparison_operator': '=', 'value': '192.168.122.83'}]
         assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
@@ -50,9 +50,9 @@ class TestStixToAql(unittest.TestCase, object):
         parsed_stix = [{'attribute': 'ipv6-addr:value', 'comparison_operator': '=', 'value': '3001:0:0:0:0:0:0:2'}]
         assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
 
-    def test_url_query(self):
+    def test_url_query_with_default_mapping_and_select(self):
         stix_pattern = "[url:value = 'http://www.testaddress.com']"
-        query = shifter.translate('qradar', 'query', '{}', stix_pattern, OPTIONS)
+        query = shifter.translate('qradar', 'query', '{}', stix_pattern)
         where_statement = "WHERE url = 'http://www.testaddress.com' {} {}".format(default_limit, default_time)
         parsed_stix = [{'attribute': 'url:value', 'comparison_operator': '=', 'value': 'http://www.testaddress.com'}]
         assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
@@ -80,8 +80,7 @@ class TestStixToAql(unittest.TestCase, object):
         parsed_stix = [{'attribute': 'mac-addr:value', 'comparison_operator': '=', 'value': '00-00-5E-00-53-00'}, {'attribute': 'url:value', 'comparison_operator': '=', 'value': 'www.example.com'}]
         assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
 
-    def test_file_query(self):
-        # TODO: Add support for file hashes. Unsure at this point how QRadar queries them
+    def test_file_name_query(self):
         stix_pattern = "[file:name = 'some_file.exe']"
         query = shifter.translate('qradar', 'query', '{}', stix_pattern, OPTIONS)
         where_statement = "WHERE filename = 'some_file.exe' {} {}".format(default_limit, default_time)
@@ -211,7 +210,7 @@ class TestStixToAql(unittest.TestCase, object):
     def test_custom_qradar_fields_and_mapping(self):
         stix_pattern = "[ipv4-addr:value = '192.168.122.83']"
         custom_options = copy.deepcopy(OPTIONS)
-        custom_options["select_fields"] = ["sourceip as sourceip", "sourceport as sourceport", "destinationip as destinationip", "destinationport as destinationport", "username as username", "eventcount as eventcount", "PROTOCOLNAME(protocolid) as protocol"]
+        custom_options["options"]["select_fields"] = ["sourceip as sourceip", "sourceport as sourceport", "destinationip as destinationip", "destinationport as destinationport", "username as username", "eventcount as eventcount", "PROTOCOLNAME(protocolid) as protocol"]
         custom_options["mapping"] = {
                 "ipv4-addr": {"fields": {"value": ["sourceip"]}},
                 "ipv6-addr": {"fields": {"value": ["sourceip"]}},
@@ -225,7 +224,7 @@ class TestStixToAql(unittest.TestCase, object):
         query = shifter.translate('qradar', 'query', '{}', stix_pattern, custom_options)
         where_statement = "WHERE sourceip = \'192.168.122.83\' {} {}".format(default_limit, default_time)
         parsed_stix = [{'value': '192.168.122.83', 'comparison_operator': '=', 'attribute': 'ipv4-addr:value'}]
-        custom_selections = "SELECT {}".format(", ".join(custom_options["select_fields"]))
+        custom_selections = "SELECT {}".format(", ".join(custom_options["options"]["select_fields"]))
         assert query == {'queries': [custom_selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
 
     def test_custom_time_limit_and_result_count(self):
@@ -246,15 +245,21 @@ class TestStixToAql(unittest.TestCase, object):
         assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
 
     def test_sha256_filehash_query(self):
+        custom_options = copy.deepcopy(OPTIONS)
+        custom_options["options"]["select_fields"] = custom_options["options"]["select_fields"] + ["\"File Hash\" as filehash", "\"SHA256 Hash\" as sha256hash", "\"SHA1 Hash\" as sha1hash", "\"MD5 Hash\" as md5hash"]
+        custom_selections = "SELECT {}".format(", ".join(custom_options["options"]['select_fields']))
         stix_pattern = "[file:hashes.'SHA-256' = 'sha256hash']"
-        query = shifter.translate('qradar', 'query', '{}', stix_pattern, OPTIONS)
+        query = shifter.translate('qradar', 'query', '{}', stix_pattern, custom_options)
         where_statement = "WHERE (sha256hash = 'sha256hash' OR filehash = 'sha256hash') {} {}".format(default_limit, default_time)
         parsed_stix = [{'attribute': 'file:hashes.SHA-256', 'comparison_operator': '=', 'value': 'sha256hash'}]
-        assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
+        assert query == {'queries': [custom_selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
 
     def test_multi_filehash_query(self):
+        custom_options = copy.deepcopy(OPTIONS)
+        custom_options["options"]["select_fields"] = custom_options["options"]["select_fields"] + ["\"File Hash\" as filehash", "\"SHA256 Hash\" as sha256hash", "\"SHA1 Hash\" as sha1hash", "\"MD5 Hash\" as md5hash"]
+        custom_selections = "SELECT {}".format(", ".join(custom_options["options"]['select_fields']))
         stix_pattern = "[file:hashes.'SHA-256' = 'sha256hash'] OR [file:hashes.'MD5' = 'md5hash']"
-        query = shifter.translate('qradar', 'query', '{}', stix_pattern, OPTIONS)
+        query = shifter.translate('qradar', 'query', '{}', stix_pattern, custom_options)
         where_statement = "WHERE (sha256hash = 'sha256hash' OR filehash = 'sha256hash') OR (md5hash = 'md5hash' OR filehash = 'md5hash') {} {}".format(default_limit, default_time)
         parsed_stix = [{'attribute': 'file:hashes.SHA-256', 'comparison_operator': '=', 'value': 'sha256hash'}, {'attribute': 'file:hashes.MD5', 'comparison_operator': '=', 'value': 'md5hash'}]
-        assert query == {'queries': [selections + from_statement + where_statement], 'parsed_stix': parsed_stix}
+        assert query == {'queries': [custom_selections + from_statement + where_statement], 'parsed_stix': parsed_stix}

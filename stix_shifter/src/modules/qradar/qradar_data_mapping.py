@@ -21,7 +21,7 @@ class QRadarDataMapper:
 
     def __init__(self, options):
         self.mapping_json = options['mapping'] if 'mapping' in options else {}
-        self.select_fields_json = options['select_fields'] if 'select_fields' in options else {}
+        self.select_fields_json = options['options']['select_fields'] if ('options' in options and 'select_fields' in options['options']) else {}
 
     def map_field(self, stix_object_name, stix_property_name):
         self.map_data = self.mapping_json or _fetch_mapping()
